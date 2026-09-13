@@ -5,6 +5,7 @@
 
 # Add our module sources
 AC_ADD_SCRIPT("${CMAKE_CURRENT_LIST_DIR}/src/GameStateAPI.cpp")
+AC_ADD_SCRIPT("${CMAKE_CURRENT_LIST_DIR}/src/GameStateUtilities.cpp")
 AC_ADD_SCRIPT("${CMAKE_CURRENT_LIST_DIR}/src/HttpGameStateServer.cpp")
 AC_ADD_SCRIPT("${CMAKE_CURRENT_LIST_DIR}/src/gs_loader.cpp")
 
