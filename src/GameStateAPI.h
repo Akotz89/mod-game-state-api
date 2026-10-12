@@ -5,12 +5,19 @@
 #ifndef GAME_STATE_API_H
 #define GAME_STATE_API_H
 
-#include "ScriptMgr.h"
 #include "Config.h"
+#include "ScriptMgr.h"
+
+#include <atomic>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <future>
+#include <memory>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include <string>
-#include <memory>
+#include <string_view>
 
 class HttpGameStateServer;
 
@@ -27,17 +34,81 @@ enum class GameStateRequestType
     Quests
 };
 
+enum class GameStateRequestState
+{
+    Pending,
+    Processing,
+    Completed,
+    Cancelled,
+    Expired
+};
+
 struct GameStateResult
 {
     nlohmann::json Payload;
     int Status;
 };
 
-std::future<GameStateResult> QueueGameStateRequest(GameStateRequestType type, std::string name = {},
-    bool includeEquipment = false);
+struct GameStateRequestControl
+{
+    std::atomic<GameStateRequestState> State{GameStateRequestState::Pending};
+    std::chrono::steady_clock::time_point Deadline;
+    std::uint64_t Generation = 0;
+};
+
+struct QueuedGameStateRequest
+{
+    std::future<GameStateResult> Future;
+    std::shared_ptr<GameStateRequestControl> Control;
+};
+
+namespace GameStateSecurity
+{
+    bool IsValidHost(std::string_view host);
+    bool IsValidOrigin(std::string_view origin);
+    bool IsValidAuthToken(std::string_view token);
+    std::string NormalizeOrigin(std::string origin);
+}
+
+QueuedGameStateRequest QueueGameStateRequest(std::uint64_t generation, GameStateRequestType type,
+    std::string name = {}, bool includeEquipment = false);
+void CancelGameStateRequest(std::shared_ptr<GameStateRequestControl> const& control);
+bool IsGameStateRequestActive(std::shared_ptr<GameStateRequestControl> const& control);
+bool ConsumeGameStateRequestWork(std::shared_ptr<GameStateRequestControl> const& control,
+    std::size_t units = 1);
 void ProcessGameStateRequests();
-void SetGameStateRequestAcceptance(bool accepting);
-void CancelGameStateRequests();
+std::unique_lock<std::mutex> LockGameStatePublication();
+void SetGameStateRequestAcceptance(std::uint64_t generation);
+bool IsGameStateGenerationAccepted(std::uint64_t generation);
+void CancelGameStateRequests(std::string const& reason);
+
+struct GameStateConfig
+{
+    bool Enabled = false;
+    std::string Host = "127.0.0.1";
+    int32 Port = 8080;
+    std::string AllowedOrigin = "http://127.0.0.1";
+    std::string AuthToken;
+
+    bool operator==(GameStateConfig const& other) const = default;
+};
+
+enum class GameStateLifecycle
+{
+    Stopped,
+    Starting,
+    Running,
+    Stopping,
+    Failed,
+    RestartRequired
+};
+
+enum class GameStateStopResult
+{
+    AlreadyStopped,
+    Stopped,
+    RestartRequired
+};
 
 // Game State API Module
 class GameStateAPI : public WorldScript
@@ -52,12 +123,19 @@ public:
     void OnUpdate(uint32 /*diff*/) override;
 
 private:
+    static GameStateConfig ReadConfiguration();
+    static bool ValidateConfiguration(GameStateConfig const& config);
+    static void EraseSecret(std::string& secret);
+
+    bool StartServer();
+    GameStateStopResult StopServer(std::string const& reason);
+
     std::unique_ptr<HttpGameStateServer> _httpServer;
-    bool _enabled;
-    std::string _host;
-    uint16 _port;
-    std::string _allowedOrigin;
-    std::string _authToken;
+    GameStateConfig _config;
+    GameStateLifecycle _lifecycle = GameStateLifecycle::Stopped;
+    std::uint64_t _nextGeneration = 0;
+    bool _configValid = true;
+    bool _worldStarted = false;
 };
 
 #endif // GAME_STATE_API_H

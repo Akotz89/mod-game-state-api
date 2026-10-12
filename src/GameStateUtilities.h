@@ -6,44 +6,23 @@
 #define GAMESTATEAPI_GAMESTATESUTILITIES_H
 
 #include <nlohmann/json.hpp>
+#include <memory>
+#include <string>
 
 class Player;
-class Item;
+struct GameStateRequestControl;
 
 namespace GameStateUtilities
 {
-    // Get detailed item information as JSON
-    nlohmann::json GetItemData(Item* item);
-
-    // Get player equipment information as JSON (with detailed item stats)
-    nlohmann::json GetPlayerEquipment(Player* player);
-
-    // Get player statistics (health, mana, stats, resistances, etc.)
-    nlohmann::json GetPlayerStats(Player* player);
-
-    // Get comprehensive player data as JSON
-    nlohmann::json GetPlayerData(Player* player, bool includeEquipment = false);
-
-    // Get server state information as JSON
-    nlohmann::json GetServerData();
-
-    // Get all online players data as JSON array
-    nlohmann::json GetAllPlayersData(bool includeEquipment = false);
-
-    // Find a player by name
-    Player* FindPlayerByName(const std::string& name);
-
-    // Get player's talent specialization info
-    nlohmann::json GetPlayerTalentInfo(Player* player);
-
-    // Get player's skills and talents information
-    nlohmann::json GetPlayerSkills(Player* player);
-
-    // Get player's full skills and talents information (includes passive skills)
-    nlohmann::json GetPlayerSkillsFull(Player* player);
-
-    // Get player's active quests information
-    nlohmann::json GetPlayerQuests(Player* player);
+    nlohmann::json GetPlayerEquipment(Player* player, std::shared_ptr<GameStateRequestControl> const& control);
+    nlohmann::json GetPlayerStats(Player* player, std::shared_ptr<GameStateRequestControl> const& control);
+    nlohmann::json GetPlayerData(Player* player, std::shared_ptr<GameStateRequestControl> const& control, bool includeEquipment = false);
+    nlohmann::json GetServerData(std::shared_ptr<GameStateRequestControl> const& control);
+    nlohmann::json GetAllPlayersData(std::shared_ptr<GameStateRequestControl> const& control, bool includeEquipment = false);
+    Player* FindPlayerByName(std::string const& name, std::shared_ptr<GameStateRequestControl> const& control);
+    nlohmann::json GetPlayerSkills(Player* player, std::shared_ptr<GameStateRequestControl> const& control);
+    nlohmann::json GetPlayerSkillsFull(Player* player, std::shared_ptr<GameStateRequestControl> const& control);
+    nlohmann::json GetPlayerQuests(Player* player, std::shared_ptr<GameStateRequestControl> const& control);
 }
 
 #endif // GAMESTATEAPI_GAMESTATESUTILITIES_H

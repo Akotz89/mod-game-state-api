@@ -3,6 +3,9 @@
  */
 
 #include "GameStateUtilities.h"
+#include "GameStateAPI.h"
+#include "RBAC.h"
+#include "WorldSession.h"
 #include "WorldSessionMgr.h"
 #include "GameTime.h"
 #include "ObjectAccessor.h"
@@ -20,20 +23,21 @@
 #include "SpellInfo.h"
 #include "SpellMgr.h"
 #include <fmt/format.h>
+#include <map>
+#include <shared_mutex>
 
 namespace GameStateUtilities
 {
-    nlohmann::json GetItemData(Item* item)
+    nlohmann::json GetItemData(Item* item, std::shared_ptr<GameStateRequestControl> const& control)
     {
         nlohmann::json itemData = nlohmann::json::object();
 
-        if (!item)
+        if (!item || !ConsumeGameStateRequestWork(control))
             return itemData;
 
         const ItemTemplate* itemTemplate = item->GetTemplate();
         if (!itemTemplate)
         {
-            // Basic item data without template
             itemData = {
                 {"entry", item->GetEntry()},
                 {"count", item->GetCount()},
@@ -43,7 +47,6 @@ namespace GameStateUtilities
             return itemData;
         }
 
-        // Basic item information
         itemData["entry"] = item->GetEntry();
         itemData["count"] = item->GetCount();
         itemData["name"] = itemTemplate->Name1;
@@ -56,10 +59,11 @@ namespace GameStateUtilities
         itemData["durability"] = item->GetUInt32Value(ITEM_FIELD_DURABILITY);
         itemData["max_durability"] = item->GetUInt32Value(ITEM_FIELD_MAXDURABILITY);
 
-        // Item stats
         nlohmann::json stats = nlohmann::json::array();
         for (uint32 i = 0; i < itemTemplate->StatsCount && i < MAX_ITEM_PROTO_STATS; ++i)
         {
+            if (!ConsumeGameStateRequestWork(control))
+                return nlohmann::json::object();
             if (itemTemplate->ItemStat[i].ItemStatValue != 0)
             {
                 stats.push_back({
@@ -70,7 +74,6 @@ namespace GameStateUtilities
         }
         itemData["stats"] = stats;
 
-        // Resistances
         itemData["resistances"] = {
             {"armor", itemTemplate->Armor},
             {"holy", itemTemplate->HolyRes},
@@ -81,7 +84,6 @@ namespace GameStateUtilities
             {"arcane", itemTemplate->ArcaneRes}
         };
 
-        // Weapon data if applicable
         if (itemTemplate->Class == ITEM_CLASS_WEAPON)
         {
             nlohmann::json weaponData = nlohmann::json::object();
@@ -91,6 +93,8 @@ namespace GameStateUtilities
             nlohmann::json damages = nlohmann::json::array();
             for (uint32 i = 0; i < MAX_ITEM_PROTO_DAMAGES; ++i)
             {
+                if (!ConsumeGameStateRequestWork(control))
+                    return nlohmann::json::object();
                 if (itemTemplate->Damage[i].DamageMin > 0 || itemTemplate->Damage[i].DamageMax > 0)
                 {
                     damages.push_back({
@@ -104,10 +108,11 @@ namespace GameStateUtilities
             itemData["weapon_data"] = weaponData;
         }
 
-        // Gem sockets
         nlohmann::json sockets = nlohmann::json::array();
         for (uint32 i = 0; i < MAX_ITEM_PROTO_SOCKETS; ++i)
         {
+            if (!ConsumeGameStateRequestWork(control))
+                return nlohmann::json::object();
             if (itemTemplate->Socket[i].Color)
             {
                 sockets.push_back({
@@ -125,10 +130,11 @@ namespace GameStateUtilities
             }
         }
 
-        // Spells on item
         nlohmann::json spells = nlohmann::json::array();
         for (uint32 i = 0; i < MAX_ITEM_PROTO_SPELLS; ++i)
         {
+            if (!ConsumeGameStateRequestWork(control))
+                return nlohmann::json::object();
             if (itemTemplate->Spells[i].SpellId > 0)
             {
                 spells.push_back({
@@ -144,7 +150,6 @@ namespace GameStateUtilities
             itemData["spells"] = spells;
         }
 
-        // Additional properties
         itemData["item_set"] = itemTemplate->ItemSet;
         itemData["bonding"] = itemTemplate->Bonding;
         itemData["stack_size"] = itemTemplate->GetMaxStackSize();
@@ -154,14 +159,13 @@ namespace GameStateUtilities
         return itemData;
     }
 
-    nlohmann::json GetPlayerEquipment(Player* player)
+    nlohmann::json GetPlayerEquipment(Player* player, std::shared_ptr<GameStateRequestControl> const& control)
     {
         nlohmann::json equipment = nlohmann::json::object();
 
-        if (!player)
-            return equipment;
+        if (!player || !ConsumeGameStateRequestWork(control))
+            return IsGameStateRequestActive(control) ? equipment : nlohmann::json::object();
 
-        // Equipment slot mappings using actual AzerothCore slot constants
         const std::map<uint8, std::string> slotNames = {
             {EQUIPMENT_SLOT_HEAD, "head"},
             {EQUIPMENT_SLOT_NECK, "neck"},
@@ -186,9 +190,11 @@ namespace GameStateUtilities
 
         for (const auto& [slot, name] : slotNames)
         {
+            if (!ConsumeGameStateRequestWork(control))
+                return nlohmann::json::object();
             if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
             {
-                equipment[name] = GetItemData(item);
+                equipment[name] = GetItemData(item, control);
             }
             else
             {
@@ -196,24 +202,22 @@ namespace GameStateUtilities
             }
         }
 
-        return equipment;
+        return IsGameStateRequestActive(control) ? equipment : nlohmann::json::object();
     }
 
-    nlohmann::json GetPlayerStats(Player* player)
+    nlohmann::json GetPlayerStats(Player* player, std::shared_ptr<GameStateRequestControl> const& control)
     {
         nlohmann::json stats = nlohmann::json::object();
 
-        if (!player)
-            return stats;
+        if (!player || !ConsumeGameStateRequestWork(control))
+            return IsGameStateRequestActive(control) ? stats : nlohmann::json::object();
 
-        // Basic character stats
         stats["level"] = player->GetLevel();
         stats["experience"] = {
             {"current", player->GetUInt32Value(PLAYER_XP)},
             {"next_level", player->GetUInt32Value(PLAYER_NEXT_LEVEL_XP)}
         };
 
-        // Primary stats
         stats["attributes"] = {
             {"strength", player->GetStat(STAT_STRENGTH)},
             {"agility", player->GetStat(STAT_AGILITY)},
@@ -222,13 +226,11 @@ namespace GameStateUtilities
             {"spirit", player->GetStat(STAT_SPIRIT)}
         };
 
-        // Health and power
         stats["health"] = {
             {"current", player->GetHealth()},
             {"max", player->GetMaxHealth()}
         };
 
-        // All power types
         stats["power"] = {
             {"mana", {
                 {"current", player->GetPower(POWER_MANA)},
@@ -260,23 +262,40 @@ namespace GameStateUtilities
             }}
         };
 
-        // Combat stats
         stats["combat"] = {
             {"attack_power", player->GetTotalAttackPowerValue(BASE_ATTACK)},
             {"ranged_attack_power", player->GetTotalAttackPowerValue(RANGED_ATTACK)},
             {"spell_power", player->GetBaseSpellPowerBonus()},
+            {"base_spell_power", player->GetBaseSpellPowerBonus()},
+            {"healing_bonus", player->GetInt32Value(PLAYER_FIELD_MOD_HEALING_DONE_POS)},
+            {"spell_damage_bonus_by_school", {
+                {"holy", player->GetInt32Value(PLAYER_FIELD_MOD_DAMAGE_DONE_POS + SPELL_SCHOOL_HOLY)},
+                {"fire", player->GetInt32Value(PLAYER_FIELD_MOD_DAMAGE_DONE_POS + SPELL_SCHOOL_FIRE)},
+                {"nature", player->GetInt32Value(PLAYER_FIELD_MOD_DAMAGE_DONE_POS + SPELL_SCHOOL_NATURE)},
+                {"frost", player->GetInt32Value(PLAYER_FIELD_MOD_DAMAGE_DONE_POS + SPELL_SCHOOL_FROST)},
+                {"shadow", player->GetInt32Value(PLAYER_FIELD_MOD_DAMAGE_DONE_POS + SPELL_SCHOOL_SHADOW)},
+                {"arcane", player->GetInt32Value(PLAYER_FIELD_MOD_DAMAGE_DONE_POS + SPELL_SCHOOL_ARCANE)}
+            }},
             {"critical_chance", {
                 {"melee", player->GetFloatValue(PLAYER_CRIT_PERCENTAGE)},
                 {"ranged", player->GetFloatValue(PLAYER_RANGED_CRIT_PERCENTAGE)},
-                {"spell", player->GetFloatValue(PLAYER_SPELL_CRIT_PERCENTAGE1)}
+                {"spell", player->GetFloatValue(PLAYER_SPELL_CRIT_PERCENTAGE1 + static_cast<uint16>(SPELL_SCHOOL_HOLY))},
+                {"spell_by_school", {
+                    {"holy", player->GetFloatValue(PLAYER_SPELL_CRIT_PERCENTAGE1 + static_cast<uint16>(SPELL_SCHOOL_HOLY))},
+                    {"fire", player->GetFloatValue(PLAYER_SPELL_CRIT_PERCENTAGE1 + static_cast<uint16>(SPELL_SCHOOL_FIRE))},
+                    {"nature", player->GetFloatValue(PLAYER_SPELL_CRIT_PERCENTAGE1 + static_cast<uint16>(SPELL_SCHOOL_NATURE))},
+                    {"frost", player->GetFloatValue(PLAYER_SPELL_CRIT_PERCENTAGE1 + static_cast<uint16>(SPELL_SCHOOL_FROST))},
+                    {"shadow", player->GetFloatValue(PLAYER_SPELL_CRIT_PERCENTAGE1 + static_cast<uint16>(SPELL_SCHOOL_SHADOW))},
+                    {"arcane", player->GetFloatValue(PLAYER_SPELL_CRIT_PERCENTAGE1 + static_cast<uint16>(SPELL_SCHOOL_ARCANE))}
+                }}
             }},
             {"hit_chance", {
-                {"melee", player->GetFloatValue(PLAYER_FIELD_MOD_TARGET_PHYSICAL_RESISTANCE)},
-                {"spell", player->GetFloatValue(PLAYER_FIELD_MOD_TARGET_RESISTANCE)}
+                {"melee", player->m_modMeleeHitChance},
+                {"ranged", player->m_modRangedHitChance},
+                {"spell", player->m_modSpellHitChance}
             }}
         };
 
-        // Resistances
         stats["resistances"] = {
             {"armor", player->GetArmor()},
             {"holy", player->GetResistance(SPELL_SCHOOL_HOLY)},
@@ -287,35 +306,31 @@ namespace GameStateUtilities
             {"arcane", player->GetResistance(SPELL_SCHOOL_ARCANE)}
         };
 
-        // Status information
         stats["status"] = {
             {"alive", player->IsAlive()},
             {"in_combat", player->IsInCombat()},
             {"resting", player->HasPlayerFlag(PLAYER_FLAGS_RESTING)},
             {"ghost", player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST)},
-            {"player_vs_player", player->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_PVP_TIMER)},
+            {"player_vs_player", player->IsPvP()},
             {"away", player->isAFK()},
             {"dnd", player->isDND()}
         };
 
-        // Average item level
         stats["average_item_level"] = player->GetAverageItemLevel();
 
-        return stats;
+        return IsGameStateRequestActive(control) ? stats : nlohmann::json::object();
     }
 
-    nlohmann::json GetPlayerTalentInfo(Player* player)
+    nlohmann::json GetPlayerTalentInfo(Player* player, std::shared_ptr<GameStateRequestControl> const& control)
     {
         nlohmann::json talents = nlohmann::json::object();
 
-        if (!player)
-            return talents;
+        if (!player || !ConsumeGameStateRequestWork(control))
+            return IsGameStateRequestActive(control) ? talents : nlohmann::json::object();
 
         talents["active_spec"] = player->GetActiveSpec();
         talents["specs_count"] = player->GetSpecsCount();
 
-        // Get talent points spent in each tree
-        // Note: This is a simplified version, full talent tree data would require more complex implementation
         uint32 totalTalentPoints = player->CalculateTalentsPoints();
         uint32 freeTalentPoints = player->GetFreeTalentPoints();
         uint32 usedTalentPoints = (totalTalentPoints >= freeTalentPoints) ? (totalTalentPoints - freeTalentPoints) : 0;
@@ -326,15 +341,34 @@ namespace GameStateUtilities
             {"total", totalTalentPoints}
         };
 
-        return talents;
+        nlohmann::json learned = nlohmann::json::array();
+        for (auto const& [spellId, talent] : player->GetTalentMap())
+        {
+            if (!ConsumeGameStateRequestWork(control))
+                return nlohmann::json::object();
+            if (!talent || talent->State == PLAYERSPELL_REMOVED)
+                continue;
+            nlohmann::json entry = {{"spell_id", spellId}, {"talent_id", talent->talentID},
+                {"spec_mask", static_cast<uint8>(talent->specMask)}, {"in_spellbook", talent->inSpellBook}};
+            if (TalentSpellPos const* position = GetTalentSpellPos(spellId))
+            {
+                entry["talent_id"] = position->talent_id;
+                entry["rank"] = position->rank + 1;
+            }
+            else
+                entry["missing_template"] = true;
+            learned.push_back(std::move(entry));
+        }
+        talents["learned_talents"] = std::move(learned);
+        return IsGameStateRequestActive(control) ? talents : nlohmann::json::object();
     }
 
-    nlohmann::json GetPlayerData(Player* player, bool includeEquipment)
+    nlohmann::json GetPlayerData(Player* player, std::shared_ptr<GameStateRequestControl> const& control, bool includeEquipment)
     {
         nlohmann::json data = nlohmann::json::object();
 
-        if (!player)
-            return data;
+        if (!player || !ConsumeGameStateRequestWork(control))
+            return IsGameStateRequestActive(control) ? data : nlohmann::json::object();
 
         WorldSession* session = player->GetSession();
 
@@ -347,18 +381,17 @@ namespace GameStateUtilities
         data["zone_id"] = player->GetZoneId();
         data["area_id"] = player->GetAreaId();
         data["map_id"] = player->GetMapId();
-        data["online"] = true; // If we have a Player object, they're online
+        data["online"] = player->IsInWorld();
 
-        // Account and session info
         if (session)
         {
             data["account_id"] = session->GetAccountId();
-            data["account_name"] = session->GetPlayerName();
+            data["account_name"] = session->GetRBACData()
+                ? nlohmann::json(session->GetRBACData()->GetName()) : nlohmann::json(nullptr);
             data["latency"] = session->GetLatency();
             data["security_level"] = static_cast<uint32>(session->GetSecurity());
         }
 
-        // Guild information
         if (Guild* guild = sGuildMgr->GetGuildById(player->GetGuildId()))
         {
             data["guild"] = {
@@ -372,7 +405,6 @@ namespace GameStateUtilities
             data["guild"] = nullptr;
         }
 
-        // Additional character data
         data["money"] = player->GetMoney();
         data["played_time"] = {
             {"total", player->GetTotalPlayedTime()},
@@ -381,7 +413,6 @@ namespace GameStateUtilities
         data["honor_points"] = player->GetHonorPoints();
         data["arena_points"] = player->GetArenaPoints();
 
-        // Position information
         data["position"] = {
             {"x", player->GetPositionX()},
             {"y", player->GetPositionY()},
@@ -389,7 +420,6 @@ namespace GameStateUtilities
             {"orientation", player->GetOrientation()}
         };
 
-        // Health and power
         data["health"] = {
             {"current", player->GetHealth()},
             {"max", player->GetMaxHealth()}
@@ -402,7 +432,6 @@ namespace GameStateUtilities
             {"max", player->GetMaxPower(primaryPower)}
         };
 
-        // Group information
         if (Group* group = player->GetGroup())
         {
             data["group"] = {
@@ -422,7 +451,6 @@ namespace GameStateUtilities
             data["group"] = nullptr;
         }
 
-        // Get basic stats without detailed breakdown
         data["stats"] = {
             {"strength", player->GetStat(STAT_STRENGTH)},
             {"agility", player->GetStat(STAT_AGILITY)},
@@ -432,7 +460,6 @@ namespace GameStateUtilities
             {"average_item_level", player->GetAverageItemLevel()}
         };
 
-        // Status flags
         data["status"] = {
             {"alive", player->IsAlive()},
             {"in_combat", player->IsInCombat()},
@@ -445,15 +472,17 @@ namespace GameStateUtilities
 
         if (includeEquipment)
         {
-            data["equipment"] = GetPlayerEquipment(player);
+            data["equipment"] = GetPlayerEquipment(player, control);
         }
 
-        return data;
+        return IsGameStateRequestActive(control) ? data : nlohmann::json::object();
     }
 
-    nlohmann::json GetServerData()
+    nlohmann::json GetServerData(std::shared_ptr<GameStateRequestControl> const& control)
     {
         nlohmann::json data = nlohmann::json::object();
+        if (!ConsumeGameStateRequestWork(control))
+            return data;
 
         Seconds uptime = GameTime::GetUptime();
         Seconds currentTime = GameTime::GetGameTime();
@@ -462,13 +491,25 @@ namespace GameStateUtilities
         data["uptime_seconds"] = uptime.count();
         data["current_time"] = currentTime.count();
         data["start_time"] = startTime.count();
+        {
+            std::shared_lock lock(*HashMapHolder<Player>::GetLock());
+            std::size_t characters = 0;
+            for (auto const& [guid, player] : ObjectAccessor::GetPlayers())
+            {
+                if (!ConsumeGameStateRequestWork(control))
+                    return nlohmann::json::object();
+                if (player && player->IsInWorld())
+                    ++characters;
+            }
+            data["characters_in_world"] = characters;
+        }
         data["player_count"] = sWorldSessionMgr->GetPlayerCount();
+        data["online_players"] = data["player_count"];
         data["max_player_count"] = sWorldSessionMgr->GetMaxPlayerCount();
         data["active_sessions"] = sWorldSessionMgr->GetActiveSessionCount();
         data["queued_sessions"] = sWorldSessionMgr->GetQueuedSessionCount();
         data["total_sessions"] = sWorldSessionMgr->GetActiveAndQueuedSessionCount();
 
-        // Format uptime as human-readable
         uint32 uptimeSeconds = static_cast<uint32>(uptime.count());
         uint32 days = uptimeSeconds / 86400;
         uint32 hours = (uptimeSeconds % 86400) / 3600;
@@ -477,67 +518,69 @@ namespace GameStateUtilities
 
         data["uptime_formatted"] = fmt::format("{}d {}h {}m {}s", days, hours, minutes, seconds);
 
-        return data;
+        return IsGameStateRequestActive(control) ? data : nlohmann::json::object();
     }
 
-    nlohmann::json GetAllPlayersData(bool includeEquipment)
+    nlohmann::json GetAllPlayersData(std::shared_ptr<GameStateRequestControl> const& control, bool includeEquipment)
     {
         nlohmann::json players = nlohmann::json::array();
 
-        const auto& sessions = sWorldSessionMgr->GetAllSessions();
-        for (const auto& [accountId, session] : sessions)
+        // Playerbots own sessions outside WorldSessionMgr; the native registry
+        // includes every player and requires its shared membership lock.
+        std::shared_lock lock(*HashMapHolder<Player>::GetLock());
+        for (auto const& [guid, player] : ObjectAccessor::GetPlayers())
         {
-            if (Player* player = session->GetPlayer())
-            {
-                // Only include players that are actually in world
-                if (player->IsInWorld())
-                {
-                    players.push_back(GetPlayerData(player, includeEquipment));
-                }
-            }
+            if (!ConsumeGameStateRequestWork(control))
+                return nlohmann::json::object();
+            if (player && player->IsInWorld())
+                players.push_back(GetPlayerData(player, control, includeEquipment));
         }
 
-        return players;
+        return IsGameStateRequestActive(control) ? players : nlohmann::json::array();
     }
 
-    Player* FindPlayerByName(const std::string& name)
+    Player* FindPlayerByName(const std::string& name, std::shared_ptr<GameStateRequestControl> const& control)
     {
-        // Use AzerothCore's ObjectAccessor for efficient player lookup
+        if (!ConsumeGameStateRequestWork(control))
+            return nullptr;
         return ObjectAccessor::FindPlayerByName(name);
     }
 
-    nlohmann::json GetPlayerSkills(Player* player)
+    nlohmann::json GetPlayerSkills(Player* player, std::shared_ptr<GameStateRequestControl> const& control)
     {
         nlohmann::json skills = nlohmann::json::object();
 
-        if (!player)
-            return skills;
+        if (!player || !ConsumeGameStateRequestWork(control))
+            return IsGameStateRequestActive(control) ? skills : nlohmann::json::object();
 
-        // Get castable spells (non-passive spells)
         nlohmann::json castableSpells = nlohmann::json::array();
 
         const PlayerSpellMap& spellMap = player->GetSpellMap();
-        // Get castable spells (non-passive spells)
         for (const auto& spellPair : spellMap)
         {
+            if (!ConsumeGameStateRequestWork(control))
+                return nlohmann::json::object();
             uint32 spellId = spellPair.first;
             const PlayerSpell* playerSpell = spellPair.second;
 
-            // Skip only removed spells
-            if (playerSpell->State == PLAYERSPELL_REMOVED)
+            if (!playerSpell || playerSpell->State == PLAYERSPELL_REMOVED)
                 continue;
 
-            // Get spell info
             SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
             if (!spellInfo)
+            {
+                castableSpells.push_back({{"spell_id", spellId}, {"active", static_cast<bool>(playerSpell->Active)},
+                    {"spec_mask", static_cast<uint8>(playerSpell->specMask)}, {"missing_template", true}});
                 continue;
+            }
 
-            // Skip passive spells - we only want castable abilities
             if (spellInfo->IsPassive())
                 continue;
 
             nlohmann::json spellData = {
                 {"spell_id", spellId},
+                {"active", static_cast<bool>(playerSpell->Active)},
+                {"spec_mask", static_cast<uint8>(playerSpell->specMask)},
                 {"name", spellInfo->SpellName[0] ? spellInfo->SpellName[0] : "Unknown"},
                 {"rank", spellInfo->Rank[0] ? spellInfo->Rank[0] : ""},
                 {"school", spellInfo->SchoolMask},
@@ -552,22 +595,22 @@ namespace GameStateUtilities
         skills["castable_spells"] = castableSpells;
         skills["spell_count"] = castableSpells.size();
 
-        return skills;
+        return IsGameStateRequestActive(control) ? skills : nlohmann::json::object();
     }
 
-    nlohmann::json GetPlayerSkillsFull(Player* player)
+    nlohmann::json GetPlayerSkillsFull(Player* player, std::shared_ptr<GameStateRequestControl> const& control)
     {
         nlohmann::json skills = nlohmann::json::object();
 
-        if (!player)
-            return skills;
+        if (!player || !ConsumeGameStateRequestWork(control))
+            return IsGameStateRequestActive(control) ? skills : nlohmann::json::object();
 
-        // Get all learned skills (the original implementation)
         nlohmann::json skillsArray = nlohmann::json::array();
 
-        // Iterate through all skill lines that the player has
         for (uint32 i = 0; i < PLAYER_MAX_SKILLS; ++i)
         {
+            if (!ConsumeGameStateRequestWork(control))
+                return nlohmann::json::object();
             uint32 skill = player->GetUInt32Value(PLAYER_SKILL_INFO_1_1 + i * 3);
             if (skill == 0)
                 continue;
@@ -578,7 +621,6 @@ namespace GameStateUtilities
             if (skillId == 0)
                 continue;
 
-            // Get skill values
             uint16 skillValue = player->GetSkillValue(skillId);
             uint16 maxSkillValue = player->GetMaxSkillValue(skillId);
             uint16 pureSkillValue = player->GetPureSkillValue(skillId);
@@ -595,7 +637,6 @@ namespace GameStateUtilities
                 {"temporary_bonus", tempBonus}
             };
 
-            // Add skill line name if available
             if (SkillLineEntry const* skillLineEntry = sSkillLineStore.LookupEntry(skillId))
             {
                 skillData["name"] = skillLineEntry->name[0]; // Default locale
@@ -605,115 +646,89 @@ namespace GameStateUtilities
         }
 
         skills["passive_skills"] = skillsArray;
+        skills["skills"] = std::move(skillsArray);
 
-        // Get talent information
-        nlohmann::json talentsInfo = GetPlayerTalentInfo(player);
+        nlohmann::json talentsInfo = GetPlayerTalentInfo(player, control);
         skills["talents"] = talentsInfo;
 
-        // Get castable spells
-        nlohmann::json castableData = GetPlayerSkills(player);
+        nlohmann::json castableData = GetPlayerSkills(player, control);
+        if (!IsGameStateRequestActive(control))
+            return nlohmann::json::object();
         skills["castable_spells"] = castableData["castable_spells"];
         skills["spell_count"] = castableData["spell_count"];
 
-        return skills;
+        return IsGameStateRequestActive(control) ? skills : nlohmann::json::object();
     }
 
-    nlohmann::json GetPlayerQuests(Player* player)
+    nlohmann::json GetQuestData(uint32 questId, QuestStatus status)
     {
-        nlohmann::json questsData = nlohmann::json::object();
-
-        if (!player)
-            return questsData;
-
-        nlohmann::json activeQuests = nlohmann::json::array();
-        nlohmann::json completedQuests = nlohmann::json::array();
-
-        // Get quest status map
-        QuestStatusMap& questStatusMap = player->getQuestStatusMap();
-
-        for (const auto& questStatusPair : questStatusMap)
+        nlohmann::json data = {{"quest_id", questId}, {"status", static_cast<uint32>(status)}};
+        Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
+        if (!quest)
         {
-            uint32 questId = questStatusPair.first;
-            const QuestStatusData& questStatus = questStatusPair.second;
+            data["missing_template"] = true;
+            return data;
+        }
+        data.update({{"title", quest->GetTitle()}, {"description", quest->GetDetails()},
+            {"level", quest->GetQuestLevel()}, {"min_level", quest->GetMinLevel()},
+            {"quest_type", quest->GetType()}, {"suggested_players", quest->GetSuggestedPlayers()},
+            {"time_limit", quest->GetTimeAllowed()}, {"is_daily", quest->IsDaily()},
+            {"is_weekly", quest->IsWeekly()}, {"is_repeatable", quest->IsRepeatable()}});
+        return data;
+    }
 
-            // Get quest template
-            Quest const* quest = sObjectMgr->GetQuestTemplate(questId);
-            if (!quest)
+    nlohmann::json GetPlayerQuests(Player* player, std::shared_ptr<GameStateRequestControl> const& control)
+    {
+        if (!player || !ConsumeGameStateRequestWork(control))
+            return nlohmann::json::object();
+        nlohmann::json active = nlohmann::json::array();
+        nlohmann::json completed = nlohmann::json::array();
+        for (auto const& [questId, status] : player->getQuestStatusMap())
+        {
+            if (!ConsumeGameStateRequestWork(control))
+                return nlohmann::json::object();
+            if (status.Status == QUEST_STATUS_NONE || status.Status == QUEST_STATUS_REWARDED)
                 continue;
-
-            nlohmann::json questData = {
-                {"quest_id", questId},
-                {"title", quest->GetTitle()},
-                {"description", quest->GetDetails()},
-                {"level", quest->GetQuestLevel()},
-                {"min_level", quest->GetMinLevel()},
-                {"quest_type", quest->GetType()},
-                {"suggested_players", quest->GetSuggestedPlayers()},
-                {"time_limit", quest->GetTimeAllowed()},
-                {"is_daily", quest->IsDaily()},
-                {"is_weekly", quest->IsWeekly()},
-                {"is_repeatable", quest->IsRepeatable()},
-                {"status", static_cast<uint32>(questStatus.Status)}
-            };
-
-            // Add quest objectives progress if quest is in progress
-            if (questStatus.Status == QUEST_STATUS_INCOMPLETE)
+            nlohmann::json data = GetQuestData(questId, status.Status);
+            data["ready_to_turn_in"] = status.Status == QUEST_STATUS_COMPLETE;
+            data["explored"] = status.Explored;
+            data["timer"] = status.Timer;
+            nlohmann::json items = nlohmann::json::array();
+            nlohmann::json creatures = nlohmann::json::array();
+            if (Quest const* quest = sObjectMgr->GetQuestTemplate(questId))
             {
-                nlohmann::json objectives = nlohmann::json::array();
-
-                // Item objectives
-                nlohmann::json itemObjectives = nlohmann::json::array();
                 for (uint32 i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT; ++i)
                 {
-                    if (quest->RequiredItemId[i] > 0)
-                    {
-                        itemObjectives.push_back({
-                            {"item_id", quest->RequiredItemId[i]},
-                            {"required_count", quest->RequiredItemCount[i]},
-                            {"current_count", questStatus.ItemCount[i]}
-                        });
-                    }
+                    if (!ConsumeGameStateRequestWork(control))
+                        return nlohmann::json::object();
+                    if (quest->RequiredItemId[i])
+                        items.push_back({{"item_id", quest->RequiredItemId[i]},
+                            {"required_count", quest->RequiredItemCount[i]}, {"current_count", status.ItemCount[i]}});
                 }
-
-                // Creature/GameObject objectives
-                nlohmann::json creatureObjectives = nlohmann::json::array();
                 for (uint32 i = 0; i < QUEST_OBJECTIVES_COUNT; ++i)
                 {
-                    if (quest->RequiredNpcOrGo[i] != 0)
-                    {
-                        creatureObjectives.push_back({
-                            {"npc_or_go_id", quest->RequiredNpcOrGo[i]},
-                            {"required_count", quest->RequiredNpcOrGoCount[i]},
-                            {"current_count", questStatus.CreatureOrGOCount[i]}
-                        });
-                    }
+                    if (!ConsumeGameStateRequestWork(control))
+                        return nlohmann::json::object();
+                    if (quest->RequiredNpcOrGo[i])
+                        creatures.push_back({{"npc_or_go_id", quest->RequiredNpcOrGo[i]},
+                            {"required_count", quest->RequiredNpcOrGoCount[i]}, {"current_count", status.CreatureOrGOCount[i]}});
                 }
-
-                questData["item_objectives"] = itemObjectives;
-                questData["creature_objectives"] = creatureObjectives;
-                questData["explored"] = questStatus.Explored;
-                questData["timer"] = questStatus.Timer;
-
-                activeQuests.push_back(questData);
             }
-            else if (questStatus.Status == QUEST_STATUS_COMPLETE)
-            {
-                // Quest is complete but not yet turned in
-                questData["ready_to_turn_in"] = true;
-                activeQuests.push_back(questData);
-            }
-            else if (questStatus.Status == QUEST_STATUS_REWARDED)
-            {
-                // Quest has been completed and turned in
-                completedQuests.push_back(questData);
-            }
+            data["item_objectives"] = std::move(items);
+            data["creature_objectives"] = std::move(creatures);
+            active.push_back(std::move(data));
         }
-
-        questsData["active_quests"] = activeQuests;
-        questsData["completed_quests"] = completedQuests;
-        questsData["active_count"] = activeQuests.size();
-        questsData["completed_count"] = completedQuests.size();
-
-        return questsData;
+        // RewardQuest removes the active record; durable history lives in the rewarded set.
+        for (uint32 questId : player->getRewardedQuests())
+        {
+            if (!ConsumeGameStateRequestWork(control))
+                return nlohmann::json::object();
+            completed.push_back(GetQuestData(questId, QUEST_STATUS_REWARDED));
+        }
+        if (!IsGameStateRequestActive(control))
+            return nlohmann::json::object();
+        return {{"active_quests", active}, {"completed_quests", completed},
+            {"active_count", active.size()}, {"completed_count", completed.size()},
+            {"rewarded_count", player->GetRewardedQuestCount()}};
     }
 }

@@ -1,32 +1,23 @@
-#
-# Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license: https://github.com/azerothcore/azerothcore-wotlk/blob/master/LICENSE-AGPL3
-#
-
+# Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, GNU AGPL v3
 [worldserver]
 
-########################################
-# Game State API Module Configuration
-########################################
+# Authenticated read-only Game State API. GET and CORS OPTIONS only.
+# Host accepts a hostname or numeric IPv4/IPv6 bind address. Keep loopback unless
+# you intentionally configure remote access; authentication is always required.
+# AllowedOrigin accepts an explicit HTTP(S) origin or '*'. It has no path/query.
+# AuthToken requires 32-256 non-whitespace characters; never log or publish it.
+# Effective changes retire the prior listener/generation before replacement.
+# If listener drain cannot complete, retain it and restart the process to recover.
+# An unchanged enabled config reload retries a failed listener start.
 #
-#    GameStateAPI.Enable
-#        Description: Enable the Game State API HTTP server
-#        Default:     0 - Disabled
-#                     1 - Enabled
-#
-#    GameStateAPI.Host
-#        Description: Host address to bind the HTTP server to
-#        Default:     "127.0.0.1"
-#
-#    GameStateAPI.Port
-#        Description: Port number for the HTTP server
-#        Default:     8080
-#
-#    GameStateAPI.AllowedOrigin
-#        Description: CORS allowed origin for web requests
-#        Default:     "*"
-#
+# All nine documented routes return full intended read data. /api/players accepts
+# equipment=true; /api/player/{name} accepts include=equipment. Dedicated routes
+# provide stats, equipment, skills, skills-full and active/rewarded quests.
+# Collections have no silent record caps or aggregate-only profile. Cancellation
+# or expiration returns an explicit error instead of an incomplete success.
 
-GameStateAPI.Enable = 1
-GameStateAPI.Host = "0.0.0.0"
+GameStateAPI.Enable = 0
+GameStateAPI.Host = "127.0.0.1"
 GameStateAPI.Port = 8080
-GameStateAPI.AllowedOrigin = "*"
+GameStateAPI.AllowedOrigin = "http://127.0.0.1"
+GameStateAPI.AuthToken = ""
