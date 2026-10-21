@@ -19,6 +19,19 @@ static std::string const NewToken(40,'y');
 static int FreePort() {int fd=socket(AF_INET,SOCK_STREAM,0);CHECK(fd>=0);sockaddr_in a{};a.sin_family=AF_INET;a.sin_addr.s_addr=htonl(INADDR_LOOPBACK);CHECK(bind(fd,reinterpret_cast<sockaddr*>(&a),sizeof(a))==0);socklen_t n=sizeof(a);CHECK(getsockname(fd,reinterpret_cast<sockaddr*>(&a),&n)==0);int p=ntohs(a.sin_port);close(fd);return p;}
 static std::shared_ptr<GameStateRequestControl> Control(std::uint64_t generation=1) {auto c=std::make_shared<GameStateRequestControl>();c->Generation=generation;c->State=GameStateRequestState::Processing;c->Deadline=std::chrono::steady_clock::now()+5s;return c;}
 static GameStateResult Snapshot(GameStateRequestType type,std::string name="Fixture",bool gear=false) {auto q=QueueGameStateRequest(1,type,std::move(name),gear);ProcessGameStateRequests();CHECK(q.Future.wait_for(0s)==std::future_status::ready);return q.Future.get();}
+static void CheckCachedWorldConfig() {
+ auto expectedCount=GetWorldConfigLoadCallbackCount();
+ sWorld->leaveGroupOnLogout=false;
+ auto before=GameStateUtilities::GetServerData(Control());auto field=before.at("effective_world_config");
+ CHECK(field.size()==3);CHECK(field.at("schema")=="cpi388-cached-world-config-v1");
+ CHECK(field.at("world_config_load_callback_count").is_number_unsigned());CHECK(field.at("world_config_load_callback_count")==expectedCount);
+ CHECK(field.at("leave_group_on_logout").is_boolean());CHECK(field.at("leave_group_on_logout")==false);
+ sWorld->leaveGroupOnLogout=true;
+ auto after=GameStateUtilities::GetServerData(Control());CHECK(after.at("effective_world_config").at("leave_group_on_logout")==true);
+ CHECK(after.at("effective_world_config").at("world_config_load_callback_count")==expectedCount);
+ before.erase("effective_world_config");after.erase("effective_world_config");CHECK(before==after);
+ sWorld->leaveGroupOnLogout=false;
+}
 static httplib::Result Request(int port,std::string path,std::string token=Token,std::string method="GET",std::string origin="",std::function<void()> pump=ProcessGameStateRequests) {
  auto future=std::async(std::launch::async,[=]{httplib::Client client("127.0.0.1",port);client.set_connection_timeout(1,0);client.set_read_timeout(3,0);httplib::Headers h;if(!token.empty())h.emplace("Authorization","Bearer "+token);if(!origin.empty())h.emplace("Origin",origin);if(method=="POST")return client.Post(path,h,"","text/plain");if(method=="OPTIONS")return client.Options(path,h);return client.Get(path,h);});
  auto deadline=std::chrono::steady_clock::now()+4s;
@@ -44,6 +57,7 @@ int main() {
  for(uint32 i=0;i<300;i++){player.statuses[3000+i]={};Quests.quests[3000+i]={};player.rewarded.insert(4000+i);Quests.quests[4000+i]={};}
  player.statuses[3001].Status=QUEST_STATUS_COMPLETE;player.rewarded.insert(4999); // No template and never a row in active map.
  SetGameStateRequestAcceptance(1);
+ CheckCachedWorldConfig();
  auto c=Control();auto gear=GameStateUtilities::GetPlayerEquipment(&player,c);
  CHECK(gear.size()==19);CHECK(gear["head"].is_null());CHECK(gear["mainhand"]["entry"]==12345);CHECK(gear["mainhand"]["stats"][0]["value"]==12);CHECK(gear["mainhand"]["durability"]==35);CHECK(gear["mainhand"]["max_durability"]==50);CHECK(gear["mainhand"]["sockets"][0]["color"]==2);CHECK(gear["mainhand"]["spells"][0]["spell_id"]==456);CHECK(gear["mainhand"]["weapon_data"]["dps"]==7.5f);
  Item withoutTemplate;player.equipment[EQUIPMENT_SLOT_HEAD]=&withoutTemplate;auto fallback=GameStateUtilities::GetPlayerEquipment(&player,c);CHECK(fallback["head"]["entry"]==12345);CHECK(fallback["head"]["durability"]==35);player.equipment[EQUIPMENT_SLOT_HEAD]=nullptr;

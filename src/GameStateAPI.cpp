@@ -43,6 +43,8 @@ std::mutex PublicationMutex;
 std::deque<std::unique_ptr<GameStateRequest>> Requests;
 std::vector<std::weak_ptr<GameStateRequestControl>> ActiveControls;
 std::atomic<std::uint64_t> AcceptedGeneration{0};
+// World-thread config callbacks; independent of listener generations.
+std::uint64_t WorldConfigLoadCallbackCount = 0;
 
 void UntrackRequest(std::shared_ptr<GameStateRequestControl> const& requestControl)
 {
@@ -100,6 +102,12 @@ GameStateResult BuildResult(GameStateRequest const& request)
                 return {GameStateUtilities::GetPlayerStats(player, request.Control), 200};
             case GameStateRequestType::Equipment:
                 return {GameStateUtilities::GetPlayerEquipment(player, request.Control), 200};
+            case GameStateRequestType::Inventory:
+            {
+                nlohmann::json inventory = GameStateUtilities::GetPlayerInventory(player, request.Control);
+                int status = inventory.contains("error") ? 503 : 200;
+                return {std::move(inventory), status};
+            }
             case GameStateRequestType::Skills:
                 return {GameStateUtilities::GetPlayerSkillsFull(player, request.Control), 200};
             case GameStateRequestType::SkillsFull:
@@ -404,6 +412,11 @@ void CancelGameStateRequests(std::string const& reason)
     }
 }
 
+std::uint64_t GetWorldConfigLoadCallbackCount()
+{
+    return WorldConfigLoadCallbackCount;
+}
+
 GameStateAPI::GameStateAPI() : WorldScript("GameStateAPI")
 {
 }
@@ -462,6 +475,7 @@ void GameStateAPI::EraseSecret(std::string& secret)
 
 void GameStateAPI::OnAfterConfigLoad(bool reload)
 {
+    ++WorldConfigLoadCallbackCount;
     GameStateConfig next = ReadConfiguration();
     bool nextValid = ValidateConfiguration(next);
     if (!nextValid)

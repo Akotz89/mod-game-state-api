@@ -96,6 +96,12 @@ struct WorldSessionMgr {
  auto const& GetAllSessions()const{return sessions;}uint32 GetPlayerCount()const{uint32 count=0;for(auto const& [id,session]:sessions)if(session&&session->player&&session->player->online)++count;return count;}uint32 GetMaxPlayerCount()const{return 1000;}uint32 GetActiveSessionCount()const{return sessions.size();}uint32 GetQueuedSessionCount()const{return 2;}uint32 GetActiveAndQueuedSessionCount()const{return sessions.size()+2;}
 };
 inline WorldSessionMgr Sessions;inline WorldSessionMgr* sWorldSessionMgr=&Sessions;
+enum ServerConfigs { CONFIG_LEAVE_GROUP_ON_LOGOUT };
+struct World {
+ bool leaveGroupOnLogout=false;
+ bool getBoolConfig(ServerConfigs index)const {assert(index==CONFIG_LEAVE_GROUP_ON_LOGOUT);if(FixtureCheckThread)assert(std::this_thread::get_id()==FixtureWorldThread);return leaveGroupOnLogout;}
+};
+inline World FixtureWorld;inline World* sWorld=&FixtureWorld;
 inline std::map<uint32,Player*> FixturePlayerRegistry;
 inline std::shared_mutex FixturePlayerRegistryMutex;
 template<class T>struct HashMapHolder {static std::shared_mutex* GetLock(){return &FixturePlayerRegistryMutex;}};

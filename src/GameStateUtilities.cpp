@@ -12,6 +12,9 @@
 #include "Player.h"
 #include "SharedDefines.h"
 #include "Item.h"
+#include "Bag.h"
+#include "ItemEnchantmentMgr.h"
+#include <set>
 #include "ItemTemplate.h"
 #include "ObjectMgr.h"
 #include "Guild.h"
@@ -203,6 +206,83 @@ namespace GameStateUtilities
         }
 
         return IsGameStateRequestActive(control) ? equipment : nlohmann::json::object();
+    }
+
+    nlohmann::json GetPlayerInventory(Player* player, std::shared_ptr<GameStateRequestControl> const& control)
+    {
+        if (!player || !ConsumeGameStateRequestWork(control))
+            return nlohmann::json::object();
+
+        constexpr std::size_t MaxRows = PLAYER_SLOT_END - (BUYBACK_SLOT_END - BUYBACK_SLOT_START)
+            + ((INVENTORY_SLOT_BAG_END - INVENTORY_SLOT_BAG_START)
+                + (BANK_SLOT_BAG_END - BANK_SLOT_BAG_START)) * MAX_BAG_SIZE;
+        auto unavailable = [] { return nlohmann::json{{"error", "Complete inventory unavailable"}, {"status", 503}}; };
+        std::string owner = std::to_string(player->GetGUID().GetRawValue());
+        nlohmann::json rows = nlohmann::json::array();
+        nlohmann::json seeds = nlohmann::json::array();
+        nlohmann::json containers = nlohmann::json::array();
+        std::set<uint32> identities;
+        std::set<std::pair<uint32, int32>> seedKeys;
+        auto copyItem = [&](Item* item, Bag* container, uint8 slot) {
+            if (!item)
+                return true;
+            if (!ConsumeGameStateRequestWork(control))
+                return false;
+            uint32 guid = item->GetGUID().GetCounter();
+            if (!guid || !item->GetTemplate() || !item->GetCount() || item->GetSlot() != slot
+                || item->GetContainer() != container || std::to_string(item->GetOwnerGUID().GetRawValue()) != owner
+                || rows.size() >= MaxRows || !identities.insert(guid).second)
+                return false;
+            uint32 entry = item->GetEntry();
+            if (!entry)
+                return false;
+            int32 property = item->GetItemRandomPropertyId();
+            rows.push_back({{"item_guid", std::to_string(guid)}, {"owner_guid", owner},
+                {"bag_guid", container ? std::to_string(container->GetGUID().GetCounter()) : "0"},
+                {"slot", slot}, {"entry", entry}, {"count", item->GetCount()},
+                {"suffix", item->GetItemSuffixFactor()}, {"property", property}});
+            if (seedKeys.emplace(entry, property).second)
+                seeds.push_back({{"entry", entry}, {"property", property},
+                    {"load_suffix", property < 0 ? GenerateEnchSuffixFactor(entry) : 0},
+                    {"derivation", property < 0 ? "GenerateEnchSuffixFactor" : "loader_zero"}});
+            return true;
+        };
+        for (uint16 slot = 0; slot < PLAYER_SLOT_END; ++slot)
+        {
+            if (slot >= BUYBACK_SLOT_START && slot < BUYBACK_SLOT_END)
+                continue;
+            if (!ConsumeGameStateRequestWork(control))
+                return nlohmann::json::object();
+            Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (!copyItem(item, nullptr, slot))
+                return unavailable();
+            if ((slot >= INVENTORY_SLOT_BAG_START && slot < INVENTORY_SLOT_BAG_END)
+                || (slot >= BANK_SLOT_BAG_START && slot < BANK_SLOT_BAG_END))
+            {
+                Bag* bag = player->GetBagByPos(slot);
+                if ((item && !bag) || (bag && static_cast<Item*>(bag) != item))
+                    return unavailable();
+                if (!bag)
+                    continue;
+                uint32 slots = bag->GetBagSize();
+                if (slots > MAX_BAG_SIZE)
+                    return unavailable();
+                containers.push_back({{"item_guid", std::to_string(bag->GetGUID().GetCounter())},
+                    {"entry", bag->GetEntry()}, {"slots", slots}});
+                for (uint32 child = 0; child < slots; ++child)
+                {
+                    if (!ConsumeGameStateRequestWork(control))
+                        return nlohmann::json::object();
+                    if (!copyItem(bag->GetItemByPos(child), bag, child))
+                        return unavailable();
+                }
+            }
+        }
+        if (!IsGameStateRequestActive(control))
+            return nlohmann::json::object();
+        return {{"complete", true}, {"guid", owner}, {"money", player->GetMoney()},
+            {"items", std::move(rows)}, {"load_suffix_evidence", std::move(seeds)},
+            {"container_evidence", std::move(containers)}};
     }
 
     nlohmann::json GetPlayerStats(Player* player, std::shared_ptr<GameStateRequestControl> const& control)
@@ -491,6 +571,11 @@ namespace GameStateUtilities
         data["uptime_seconds"] = uptime.count();
         data["current_time"] = currentTime.count();
         data["start_time"] = startTime.count();
+        data["effective_world_config"] = {
+            {"schema", "cpi388-cached-world-config-v1"},
+            {"world_config_load_callback_count", GetWorldConfigLoadCallbackCount()},
+            {"leave_group_on_logout", sWorld->getBoolConfig(CONFIG_LEAVE_GROUP_ON_LOGOUT)}
+        };
         {
             std::shared_lock lock(*HashMapHolder<Player>::GetLock());
             std::size_t characters = 0;

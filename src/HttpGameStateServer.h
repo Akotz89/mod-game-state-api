@@ -54,6 +54,7 @@ public:
 private:
     void HandlePlayerInfo(httplib::Request const& req, httplib::Response& res);
     void HandlePlayerStats(httplib::Request const& req, httplib::Response& res);
+    void HandlePlayerInventory(httplib::Request const& req, httplib::Response& res);
     void HandlePlayerEquipment(httplib::Request const& req, httplib::Response& res);
     void HandlePlayerSkills(httplib::Request const& req, httplib::Response& res);
     void HandlePlayerSkillsFull(httplib::Request const& req, httplib::Response& res);

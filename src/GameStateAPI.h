@@ -29,6 +29,7 @@ enum class GameStateRequestType
     Player,
     Stats,
     Equipment,
+    Inventory,
     Skills,
     SkillsFull,
     Quests
@@ -77,6 +78,8 @@ bool IsGameStateRequestActive(std::shared_ptr<GameStateRequestControl> const& co
 bool ConsumeGameStateRequestWork(std::shared_ptr<GameStateRequestControl> const& control,
     std::size_t units = 1);
 void ProcessGameStateRequests();
+// Config-load callback count only; read on the world thread.
+std::uint64_t GetWorldConfigLoadCallbackCount();
 std::unique_lock<std::mutex> LockGameStatePublication();
 void SetGameStateRequestAcceptance(std::uint64_t generation);
 bool IsGameStateGenerationAccepted(std::uint64_t generation);
