@@ -12,6 +12,12 @@ Author source: [abutbul/mod-game-state-api](https://github.com/abutbul/mod-game-
 at `ca8a6c84a5fedd460a2011039d90dc4f573e30fd`. Maintained source:
 [Akotz89/mod-game-state-api](https://github.com/Akotz89/mod-game-state-api).
 
+## Offline CI checks
+
+CI runs the existing Python source-contract mutation tests and core API
+presence-verifier tests. These are static checks; they do not compile a WoW
+server or establish deployment, HTTP runtime, or gameplay acceptance.
+
 ## Routes
 
 | GET route | Response |
