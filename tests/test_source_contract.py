@@ -105,6 +105,17 @@ class SourceContractTests(unittest.TestCase):
         failures = self.mutate("src/HttpGameStateServer.cpp", "!IsAuthorized(req)", "false")
         self.assertIn("surface:authenticated-get-gate", failures)
 
+    def test_inventory_route_is_required(self) -> None:
+        failures = self.mutate("src/HttpGameStateServer.cpp",
+            '"/api/player/([^/]+)/inventory"', '"/api/player/([^/]+)/other"')
+        self.assertIn("surface:inventory-route-missing", failures)
+
+    def test_extra_get_route_is_rejected(self) -> None:
+        root = self.scratch()
+        path = root / "src/HttpGameStateServer.cpp"
+        path.write_text(path.read_text() + '\n_server->Get("/unexpected", [](auto const&, auto&) {});\n')
+        self.assertIn("surface:get-route-count", analyze(root))
+
     def test_12_cpp_httplib_drain_semantics_must_remain_audited(self) -> None:
         failures = self.mutate("include/yhirose/httplib.h",
             "if (pool_.shutdown_ && pool_.jobs_.empty()) { break; }",

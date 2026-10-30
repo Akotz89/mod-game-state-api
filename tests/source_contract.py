@@ -169,7 +169,8 @@ def analyze(root: Path) -> list[str]:
         "queue:missing-worker-admission-limit")
 
     # The read-only authenticated route surface does not restrict returned fields.
-    require(http.count("_server->Get(") == 9, "surface:get-route-count")
+    require(http.count("_server->Get(") == 10, "surface:get-route-count")
+    require('"/api/player/([^/]+)/inventory"' in http, "surface:inventory-route-missing")
     require(http.count("_server->Options(") == 1, "surface:options-route-count")
     for verb in ("Post", "Put", "Patch", "Delete"):
         require(f"_server->{verb}(" not in http, f"surface:{verb.lower()}-route")

@@ -20,6 +20,7 @@ using QuestStatus=uint32;
 using Seconds=std::chrono::seconds;
 enum Powers { POWER_MANA,POWER_RAGE,POWER_FOCUS,POWER_ENERGY,POWER_HAPPINESS,POWER_RUNE,POWER_RUNIC_POWER };
 enum { EQUIPMENT_SLOT_HEAD, EQUIPMENT_SLOT_NECK,EQUIPMENT_SLOT_SHOULDERS,EQUIPMENT_SLOT_BODY,EQUIPMENT_SLOT_CHEST,EQUIPMENT_SLOT_WAIST,EQUIPMENT_SLOT_LEGS,EQUIPMENT_SLOT_FEET,EQUIPMENT_SLOT_WRISTS,EQUIPMENT_SLOT_HANDS,EQUIPMENT_SLOT_FINGER1,EQUIPMENT_SLOT_FINGER2,EQUIPMENT_SLOT_TRINKET1,EQUIPMENT_SLOT_TRINKET2,EQUIPMENT_SLOT_BACK,EQUIPMENT_SLOT_MAINHAND,EQUIPMENT_SLOT_OFFHAND,EQUIPMENT_SLOT_RANGED,EQUIPMENT_SLOT_TABARD };
+enum { PLAYER_SLOT_END=150, BUYBACK_SLOT_START=74, BUYBACK_SLOT_END=86, INVENTORY_SLOT_BAG_START=19, INVENTORY_SLOT_BAG_END=23, BANK_SLOT_BAG_START=67, BANK_SLOT_BAG_END=74, MAX_BAG_SIZE=36 };
 enum { INVENTORY_SLOT_BAG_0=255, ITEM_FIELD_DURABILITY=1,ITEM_FIELD_MAXDURABILITY=2,ITEM_CLASS_WEAPON=2,MAX_ITEM_PROTO_STATS=10,MAX_ITEM_PROTO_DAMAGES=2,MAX_ITEM_PROTO_SOCKETS=3,MAX_ITEM_PROTO_SPELLS=5 };
 enum { STAT_STRENGTH,STAT_AGILITY,STAT_STAMINA,STAT_INTELLECT,STAT_SPIRIT,BASE_ATTACK=0,RANGED_ATTACK=2 };
 enum { PLAYER_XP=10,PLAYER_NEXT_LEVEL_XP=11,PLAYER_CRIT_PERCENTAGE=12,PLAYER_RANGED_CRIT_PERCENTAGE=13,PLAYER_SPELL_CRIT_PERCENTAGE1=14,PLAYER_FIELD_MOD_TARGET_PHYSICAL_RESISTANCE=15,PLAYER_FIELD_MOD_TARGET_RESISTANCE=16,PLAYER_FLAGS=17,PLAYER_FLAGS_RESTING=1,PLAYER_FLAGS_GHOST=2,PLAYER_FLAGS_PVP_TIMER=4,PLAYER_MAX_SKILLS=128,PLAYER_SKILL_INFO_1_1=100 };
@@ -28,7 +29,7 @@ enum { SPELL_SCHOOL_NORMAL,SPELL_SCHOOL_HOLY,SPELL_SCHOOL_FIRE,SPELL_SCHOOL_NATU
 enum { PLAYERSPELL_UNCHANGED,PLAYERSPELL_REMOVED,QUEST_STATUS_NONE=0,QUEST_STATUS_COMPLETE=1,QUEST_STATUS_INCOMPLETE=3,QUEST_STATUS_REWARDED=6,QUEST_ITEM_OBJECTIVES_COUNT=6,QUEST_OBJECTIVES_COUNT=4 };
 #define SKILL_VALUE(v) ((v)&0xffff)
 #define SKILL_MAX(v) ((v)>>16)
-struct ObjectGuid { uint32 value=77; uint32 GetCounter() const {return value;} };
+struct ObjectGuid { uint64 value=77; uint32 GetCounter() const {return value;} uint64 GetRawValue() const {return value;} };
 struct ItemTemplate {
  std::string Name1="Fixture sword"; uint32 Quality=4,ItemLevel=80,RequiredLevel=70,Class=ITEM_CLASS_WEAPON,SubClass=7,InventoryType=13,StatsCount=1;
  struct {uint32 ItemStatType=4; int32 ItemStatValue=12;} ItemStat[MAX_ITEM_PROTO_STATS];
@@ -39,7 +40,18 @@ struct ItemTemplate {
  uint32 socketBonus=100,ItemSet=7,Bonding=1,SellPrice=200,BuyPrice=1000;
  float getDPS() const {return 7.5f;} uint32 GetMaxStackSize() const {return 1;}
 };
-struct Item { ItemTemplate* proto=nullptr; uint32 entry=12345,count=1,durability=35; ItemTemplate const* GetTemplate() const {return proto;} uint32 GetEntry()const{return entry;} uint32 GetCount()const{return count;} uint32 GetUInt32Value(uint32 field)const{return field==ITEM_FIELD_DURABILITY?durability:50;} };
+struct Bag;
+struct Item {
+ ItemTemplate* proto=nullptr; uint32 entry=12345,count=1,durability=35;
+ ObjectGuid guid{1},owner{77}; Bag* container=nullptr; uint8 slot=0; uint32 suffix=0; int32 property=0;
+ ItemTemplate const* GetTemplate() const {return proto;} uint32 GetEntry()const{return entry;} uint32 GetCount()const{return count;}
+ uint32 GetUInt32Value(uint32 field)const{return field==ITEM_FIELD_DURABILITY?durability:50;}
+ ObjectGuid GetGUID()const{return guid;} ObjectGuid GetOwnerGUID()const{return owner;} Bag* GetContainer()const{return container;}
+ uint8 GetSlot()const{return slot;} uint32 GetItemSuffixFactor()const{return suffix;} int32 GetItemRandomPropertyId()const{return property;}
+};
+struct Bag : Item { uint32 capacity=MAX_BAG_SIZE; std::array<Item*,MAX_BAG_SIZE> contents{}; uint32 GetBagSize()const{return capacity;} Item* GetItemByPos(uint8 pos)const{return contents.at(pos);} };
+inline uint32 GenerateEnchSuffixFactor(uint32 entry) {return entry+100;}
+
 struct PlayerTalent {uint8 State=PLAYERSPELL_UNCHANGED,specMask=3;uint32 talentID=900;bool inSpellBook=true;};
 using PlayerTalentMap=std::map<uint32,PlayerTalent*>;
 struct TalentSpellPos {uint16 talent_id=900;uint8 rank=1;};
@@ -67,13 +79,14 @@ inline std::function<void()> FixtureReadHook;
 inline void PlayerRead() {if(FixtureCheckThread)assert(std::this_thread::get_id()==FixtureWorldThread);++FixturePlayerReads;if(FixtureReadHook)FixtureReadHook();}
 struct Player {
  std::string name="Fixture";bool online=true,throwOnRead=false,pvp=true,pvpTimer=false;uint32 guildId=1;Group* group=nullptr;WorldSession* session=nullptr;
- std::array<Item*,19> equipment{}; PlayerSpellMap spells;PlayerTalentMap talents;float m_modMeleeHitChance=2.25f,m_modRangedHitChance=3.5f,m_modSpellHitChance=4.75f;QuestStatusMap statuses;std::set<uint32> rewarded;
+ ObjectGuid guid{77}; std::array<Item*,PLAYER_SLOT_END> equipment{}; std::map<uint8,Bag*> bags; PlayerSpellMap spells;PlayerTalentMap talents;float m_modMeleeHitChance=2.25f,m_modRangedHitChance=3.5f,m_modSpellHitChance=4.75f;QuestStatusMap statuses;std::set<uint32> rewarded;
  std::map<uint32,uint32> values;std::map<uint32,float> floatValues;uint8 activeSpec=0,specsCount=2;uint32 freeTalentPoints=4,totalTalentPoints=20;
  void check()const {PlayerRead();if(throwOnRead)throw std::runtime_error("fixture read failure");}
  std::string GetName()const{check();return name;}bool IsInWorld()const{check();return online;}
  uint32 GetLevel()const{check();return 19;}uint32 getClass()const{return 1;}uint32 getRace()const{return 1;}uint32 getGender()const{return 0;}
- ObjectGuid GetGUID()const{return {77};}uint32 GetZoneId()const{return 12;}uint32 GetAreaId()const{return 34;}uint32 GetMapId()const{return 0;}
+ ObjectGuid GetGUID()const{check();return guid;}uint32 GetZoneId()const{return 12;}uint32 GetAreaId()const{return 34;}uint32 GetMapId()const{return 0;}
  Item* GetItemByPos(uint8,uint8 slot){check();return equipment.at(slot);}
+ Bag* GetBagByPos(uint8 slot){check();auto i=bags.find(slot);return i==bags.end()?nullptr:i->second;}
  uint32 GetHealth()const{return 900;}uint32 GetMaxHealth()const{return 1000;}Powers getPowerType()const{return POWER_MANA;}uint32 GetPower(Powers p)const{return 10+p;}uint32 GetMaxPower(Powers p)const{return 100+p;}
  bool IsAlive()const{return true;}bool IsInCombat()const{return false;}bool HasPlayerFlag(uint32 f)const{return f==PLAYER_FLAGS_RESTING;}bool IsPvP()const{return pvp;}bool HasFlag(uint32,uint32 f)const{return f==PLAYER_FLAGS_PVP_TIMER&&pvpTimer;}bool isAFK()const{return false;}bool isDND()const{return true;}bool IsGameMaster()const{return false;}
  uint32 GetUInt32Value(uint32 field)const {check();auto it=values.find(field);return it==values.end()?0:it->second;}
@@ -96,6 +109,12 @@ struct WorldSessionMgr {
  auto const& GetAllSessions()const{return sessions;}uint32 GetPlayerCount()const{uint32 count=0;for(auto const& [id,session]:sessions)if(session&&session->player&&session->player->online)++count;return count;}uint32 GetMaxPlayerCount()const{return 1000;}uint32 GetActiveSessionCount()const{return sessions.size();}uint32 GetQueuedSessionCount()const{return 2;}uint32 GetActiveAndQueuedSessionCount()const{return sessions.size()+2;}
 };
 inline WorldSessionMgr Sessions;inline WorldSessionMgr* sWorldSessionMgr=&Sessions;
+enum ServerConfigs { CONFIG_LEAVE_GROUP_ON_LOGOUT };
+struct World {
+ bool leaveGroupOnLogout=false;
+ bool getBoolConfig(ServerConfigs index)const {assert(index==CONFIG_LEAVE_GROUP_ON_LOGOUT);if(FixtureCheckThread)assert(std::this_thread::get_id()==FixtureWorldThread);return leaveGroupOnLogout;}
+};
+inline World FixtureWorld;inline World* sWorld=&FixtureWorld;
 inline std::map<uint32,Player*> FixturePlayerRegistry;
 inline std::shared_mutex FixturePlayerRegistryMutex;
 template<class T>struct HashMapHolder {static std::shared_mutex* GetLock(){return &FixturePlayerRegistryMutex;}};

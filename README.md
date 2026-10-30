@@ -22,6 +22,7 @@ at `ca8a6c84a5fedd460a2011039d90dc4f573e30fd`. Maintained source:
 | `/api/player/{name}` | Character identity, level/class/race, location, health/power, guild/group, currency, played time, basic stats and status. |
 | `/api/player/{name}/stats` | Experience, attributes, health, all power types, combat values, resistances, status and average item level. |
 | `/api/player/{name}/equipment` | Equipped slots with item metadata, stats, resistances, weapon damage, durability, sockets and item spells. |
+| `/api/player/{name}/inventory` | Complete live inventory, including bag contents, item ownership and load-suffix evidence. |
 | `/api/player/{name}/skills` | Skill lines, learned talents/spec metadata and castable spells with IDs, names, ranks, schools, cast times, cooldowns and ranges. |
 | `/api/player/{name}/skills-full` | The same complete skill/talent/spell response, retaining the author route alias. |
 | `/api/player/{name}/quests` | Active quests with IDs, descriptions, status and objective progress; separate rewarded history and counts. |
@@ -52,6 +53,8 @@ inactive records retain `active` and `spec_mask` metadata.
 The list does not assert every returned spell is currently castable. Missing
 spell/talent metadata retains the record ID with
 `missing_template: true`; unnamed skill lines retain their IDs and values.
+
+Inventory includes equipped, backpack and bank slots and bag contents, excluding buyback. It returns 503 rather than a partial successful result if item identity, ownership or container data is inconsistent. The response includes current item suffixes and separately derived load-suffix evidence.
 
 Equipment is keyed by the equipped slot name. Empty slots are `null`. When an
 item template is unavailable, the item entry, count and durability remain

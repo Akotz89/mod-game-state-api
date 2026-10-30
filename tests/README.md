@@ -26,10 +26,11 @@ mutation. Native fixtures and exact-core compilation provide stronger evidence.
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 tests/check_exact_core_api.py /path/to/candidate/core
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_exact_core_api.py' -v
 ```
 
 This reads the actual candidate core and confirms the required script hooks,
-session/player/quest/skill APIs and vendored HTTP interfaces. It reports the core
+session/player/quest/skill and inventory/bag APIs, world-config access, and vendored HTTP interfaces. It reports the core
 commit and committed tree; it does not demand an obsolete clean revision. It
 neither compiles nor identifies uncommitted source content. Candidate source
 hashes and native compilation must be recorded separately.
@@ -39,20 +40,20 @@ hashes and native compilation must be recorded separately.
 Run from the module directory:
 
 ```sh
-WOW_OPERATIONS_ROOT=/path/to/operations-repo tests/run_native_fixture.sh /path/to/candidate/core
+WOW_OPERATIONS_ROOT=/path/to/operations-repo tests/run_native_fixture.sh /path/to/candidate/core /path/to/operations-repo/work/task/native-build
 ```
 
-When already staged under the owning operations task, the checkout and current
-core paths are detected by their established locations. Otherwise supply the
-explicit operations root and core path as shown above. The runner invokes the repository build-host guard and keeps its executable
-under the owning task's `native-build/` directory.
+Supply the operations root, candidate core and a task-owned output directory as
+shown above. The runner invokes the repository build-host guard before compiling.
+The output must be inside the operations checkout `work/` directory. It receives
+the fixture binary, synthetic contract and hash list; the output directory must not already exist to protect other runs' artifacts.
 
 The native suite compiles and executes the actual module serializers, queue and
 HTTP implementation with representative core fixtures and vendored JSON/HTTP.
 It covers equipment options, rich player/stat/skill/talent/quest data, separate
 rewarded history, missing metadata, large collections, cancellation and offline
 objects. Handler/lifecycle cases establish auth/errors and listener behavior.
-Fixtures are backend behavior evidence; they are not real earned-player state.
+The inventory fixture also checks full bag traversal, failure and cancellation, HTTP authorization, and copied values using synthetic players. Fixtures are backend behavior evidence; they are not real earned-player state.
 
 Every native build entrypoint must run the repository's build-host guard before
 compilation. Exact-core translation-unit compilation and the guarded incremental

@@ -14,6 +14,7 @@ struct GameStateRequestControl;
 
 namespace GameStateUtilities
 {
+    nlohmann::json GetPlayerInventory(Player* player, std::shared_ptr<GameStateRequestControl> const& control);
     nlohmann::json GetPlayerEquipment(Player* player, std::shared_ptr<GameStateRequestControl> const& control);
     nlohmann::json GetPlayerStats(Player* player, std::shared_ptr<GameStateRequestControl> const& control);
     nlohmann::json GetPlayerData(Player* player, std::shared_ptr<GameStateRequestControl> const& control, bool includeEquipment = false);

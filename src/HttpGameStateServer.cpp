@@ -113,6 +113,9 @@ HttpGameStateServer::HttpGameStateServer(std::string const& host, uint16 port, s
     _server->Get("/api/player/([^/]+)/equipment", [this](httplib::Request const& req, httplib::Response& res) {
         HandlePlayerEquipment(req, res);
     });
+    _server->Get("/api/player/([^/]+)/inventory", [this](httplib::Request const& req, httplib::Response& res) {
+        HandlePlayerInventory(req, res);
+    });
     _server->Get("/api/player/([^/]+)/skills", [this](httplib::Request const& req, httplib::Response& res) {
         HandlePlayerSkills(req, res);
     });
@@ -271,6 +274,17 @@ void HttpGameStateServer::HandlePlayerEquipment(httplib::Request const& req, htt
         return;
     }
     SendGameStateResponse(res, GameStateRequestType::Equipment, std::move(playerName));
+}
+
+void HttpGameStateServer::HandlePlayerInventory(httplib::Request const& req, httplib::Response& res)
+{
+    std::string playerName = req.matches[1];
+    if (!IsValidPlayerName(playerName))
+    {
+        SendErrorResponse(res, "Invalid player name", 400);
+        return;
+    }
+    SendGameStateResponse(res, GameStateRequestType::Inventory, std::move(playerName));
 }
 
 void HttpGameStateServer::HandlePlayerSkills(httplib::Request const& req, httplib::Response& res)
