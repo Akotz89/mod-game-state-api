@@ -151,4 +151,5 @@ int main() {
  Config.options["GameStateAPI.Enable"]=false;api.OnAfterConfigLoad(true);CHECK(!Request(port,"/api/health",NewToken,"GET","",pump));Config.options["GameStateAPI.Enable"]=true;Config.options["GameStateAPI.AuthToken"]=std::string("invalid");api.OnAfterConfigLoad(true);CHECK(!Request(port,"/api/health",NewToken,"GET","",pump));Config.options["GameStateAPI.AuthToken"]=NewToken;api.OnAfterConfigLoad(true);CHECK(Body(Request(port,"/api/health",NewToken,"GET","",pump))["status"]=="ok");api.OnShutdown();CHECK(!Request(port,"/api/health",NewToken,"GET","",pump));}
  CHECK(FixturePlayerReads>1000);std::cout<<"PASS lifecycle: failed bind, unchanged retry, rekey, disable, invalid reload, recovery, shutdown; reads confined to fixture world thread\n";
  std::cout<<"PASS "<<checks.load()<<" assertions; production serializers/queue/HTTP compiled; data interfaces stubbed, no realm or client mutated\n";
+ return 0;
 }

@@ -24,6 +24,26 @@ def require(path: Path, *needles: str) -> None:
         raise SystemExit(f"{path}: missing expected API text: {missing}")
 
 
+def require_inventory_api(core: Path) -> None:
+    require(core / "src/server/game/Entities/Player/Player.h",
+        "PLAYER_SLOT_END", "BUYBACK_SLOT_START", "BUYBACK_SLOT_END",
+        "INVENTORY_SLOT_BAG_START", "INVENTORY_SLOT_BAG_END",
+        "BANK_SLOT_BAG_START", "BANK_SLOT_BAG_END", "GetBagByPos(uint8 slot) const")
+    require(core / "src/server/game/Entities/Item/Item.h",
+        "GetTemplate() const", "GetOwnerGUID() const", "GetCount() const",
+        "GetSlot() const", "GetContainer()", "GetItemRandomPropertyId() const",
+        "GetItemSuffixFactor() const")
+    require(core / "src/server/game/Entities/Item/Container/Bag.h",
+        "MAX_BAG_SIZE", "GetItemByPos(uint8 slot) const", "GetBagSize() const")
+    require(core / "src/server/game/Entities/Item/ItemEnchantmentMgr.h",
+        "GenerateEnchSuffixFactor(uint32")
+    require(core / "src/server/game/Entities/Object/Object.h",
+        "GetGUID() const", "GetEntry() const")
+    require(core / "src/server/game/Entities/Object/ObjectGuid.h",
+        "GetRawValue() const", "GetCounter()")
+    require(core / "src/server/game/World/World.h", "getBoolConfig(ServerConfigs")
+    require(core / "src/server/game/World/WorldConfig.h", "CONFIG_LEAVE_GROUP_ON_LOGOUT")
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("core", type=Path, help="core source used by the candidate build")
@@ -66,6 +86,7 @@ def main() -> None:
         "MapType const& GetPlayers()",
         "std::shared_mutex* GetLock()",
     )
+    require_inventory_api(core)
     require(core / "src/server/game/Time/GameTime.h", "Seconds GetUptime()")
     require(core / "src/cmake/macros/ConfigureBaseTargets.cmake", "set(CMAKE_CXX_STANDARD 20)")
     require(
