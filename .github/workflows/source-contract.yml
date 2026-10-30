@@ -1,0 +1,19 @@
+name: API source contracts
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  static-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: Check source and mutation contracts
+        run: python -B -m unittest discover -s tests -p 'test_source_contract.py' -v
+      - name: Check native API presence verifier
+        run: python -B -m unittest discover -s tests -p 'test_exact_core_api.py' -v
