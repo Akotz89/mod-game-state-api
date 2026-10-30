@@ -141,7 +141,6 @@ bool IsDecimalPort(std::string_view value)
     return port >= 1 && port <= 65535;
 }
 
-
 }
 
 namespace GameStateSecurity
