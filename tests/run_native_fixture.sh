@@ -8,7 +8,7 @@ if [[ ! -x "$project_root/scripts/wow-build-host-guard" ]]; then
  exit 78
 fi
 "$project_root/scripts/wow-build-host-guard"
-core_root="${1:-/home/aaron/Documents/ChatGPT/wow private server/work/cpi225-integration-20260912/source/work/cpi194-owner-binding-20260918/source}"
+core_root="${1:-$module_root/../azerothcore-wotlk}"
 output="$(realpath -m -- "${2:?Provide a task-owned output directory as the second argument}")"
 work_root="$(realpath -m -- "$project_root/work")"
 if [[ "$output" != "$work_root/"* ]]; then
